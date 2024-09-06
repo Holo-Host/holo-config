@@ -1,18 +1,12 @@
 use ed25519_dalek::SigningKey;
-use failure::bail;
+use failure::{bail, ResultExt};
 use log::debug;
 
 use crate::{
-    config::Seed,
+    config::{self, ConfigDiscriminants, Seed},
     types::{SeedExplorerError, SeedExplorerResult},
 };
 use hc_seed_bundle::{LockedSeedCipher, UnlockedSeedBundle};
-
-// TODO: what should this be?
-pub const DEFAULT_DERIVATION_PATH_V2: u32 = 3;
-
-// TODO: what should this be?
-pub const DEFAULT_DERIVATION_PATH_V3: u32 = 3;
 
 pub fn get_seed_from_bundle(device_bundle: &UnlockedSeedBundle) -> Result<Seed, failure::Error> {
     let mut seed = Seed::default();
@@ -53,7 +47,9 @@ pub async fn generate_device_bundle(
         .await
         .unwrap();
 
-    let derivation_path = maybe_derivation_path.unwrap_or(DEFAULT_DERIVATION_PATH_V3);
+    let derivation_path = maybe_derivation_path.unwrap_or(config::default_derivation_path(
+        ConfigDiscriminants::default(),
+    ));
 
     let device_bundle = master.derive(derivation_path).await.unwrap();
 
@@ -69,21 +65,25 @@ pub async fn generate_device_bundle(
 }
 
 /// Unlock the given device bundle with the given password.
-pub async fn get_seed_from_locked_device_bundle(
+async fn _get_seed_from_locked_device_bundle(
     locked_device_bundle: &[u8],
     passphrase: &str,
 ) -> Result<Seed, failure::Error> {
     let passphrase = sodoken::BufRead::from(passphrase.as_bytes());
     let unlocked_bundle =
         match hc_seed_bundle::UnlockedSeedBundle::from_locked(locked_device_bundle)
-            .await?
+            .await
+            .context("getting seed from locked device bundle")?
             .remove(0)
         {
-            hc_seed_bundle::LockedSeedCipher::PwHash(cipher) => cipher.unlock(passphrase).await,
+            hc_seed_bundle::LockedSeedCipher::PwHash(cipher) => {
+                cipher.unlock(passphrase).await.context("unlocking cipher")
+            }
             oth => bail!("unexpected cipher: {:?}", oth),
         }?;
 
-    let seed = get_seed_from_bundle(&unlocked_bundle)?;
+    let seed =
+        get_seed_from_bundle(&unlocked_bundle).context("getting seed from unlocked bundle")?;
 
     Ok(seed)
 }
@@ -166,5 +166,20 @@ pub(crate) mod tests {
                 "unlocking {encoded_device_bundle} with {PASSPHRASE}"
             ))
             .unwrap_err();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn extract_seed_from_locked_succeeds() {
+        let encoded_device_bundle = generate_base64().await;
+        let device_bundle =
+            base64::decode_config(&encoded_device_bundle, base64::URL_SAFE_NO_PAD).unwrap();
+
+        let a = _get_seed_from_locked_device_bundle(&device_bundle, PASSPHRASE)
+            .await
+            .unwrap();
+
+        let b = unlock(&encoded_device_bundle, PASSPHRASE).await.unwrap();
+
+        assert_eq!(a, *b.as_bytes());
     }
 }

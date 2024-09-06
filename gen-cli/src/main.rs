@@ -1,8 +1,6 @@
 use hpos_config_core::{
     config::{ConfigDiscriminants, Seed},
-    public_key,
-    utils::get_seed_from_locked_device_bundle,
-    Config,
+    public_key, Config,
 };
 
 use clap::Parser;
@@ -61,7 +59,7 @@ struct ClapArgs {
 
     #[arg(
         long,
-        default_value_t = ConfigDiscriminants::V3,
+        default_value_t = ConfigDiscriminants::default(),
         ignore_case = true,
         help = "Version specifier for the emitted config"
     )]
@@ -77,14 +75,16 @@ async fn main() -> Result<(), Error> {
     let derivation_path = if let Some(derivation_path) = args.derivation_path {
         derivation_path
     } else {
-        hpos_config_core::utils::DEFAULT_DERIVATION_PATH_V2
+        hpos_config_core::config::default_derivation_path(ConfigDiscriminants::default())
     };
 
     // TODO: don't hardcode this
     let passphrase = "pass";
 
     let device_bundle = if let Some(device_bundle) = args.device_bundle {
-        seed = get_seed_from_locked_device_bundle(device_bundle.as_bytes(), passphrase).await?;
+        seed = hpos_config_core::utils::unlock(&device_bundle, passphrase)
+            .await?
+            .to_scalar_bytes();
 
         device_bundle
     } else {

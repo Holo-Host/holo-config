@@ -61,10 +61,21 @@ pub struct Settings {
     pub admin: Admin,
 }
 
+/// Returns the default derivation path per config version.
+pub const fn default_derivation_path(config: ConfigDiscriminants) -> u32 {
+    match config {
+        // TODO: what should these be?
+        ConfigDiscriminants::V1 => 2,
+        ConfigDiscriminants::V2 => 2,
+        ConfigDiscriminants::V3 => 2,
+    }
+}
+
+#[allow(clippy::large_enum_variant)]
 #[cfg_attr(test, derive(Clone, PartialEq))]
 #[derive(Debug, Deserialize, Serialize, EnumDiscriminants)]
 #[strum_discriminants(
-    derive(VariantNames, EnumString, strum::Display),
+    derive(VariantNames, EnumString, strum::Display, Default),
     strum(ascii_case_insensitive)
 )]
 pub enum Config {
@@ -86,6 +97,7 @@ pub enum Config {
         settings: Settings,
     },
     #[serde(rename = "v3")]
+    #[strum_discriminants(default)]
     V3 {
         /// This is the Device Seed Bundle as a base64 string which is compatible with lair-keystore >=v0.0.8
         /// And is encoded with a password that will be needed to be used to decrypt it
