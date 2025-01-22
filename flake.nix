@@ -2,13 +2,7 @@
   description = "Template for Holochain app development";
 
   inputs = {
-    versions.url =
-      "github:holochain/holochain/holochain-0.3.0-beta-dev.45?dir=versions/weekly";
-    versions.inputs.holochain.url =
-      "github:holochain/holochain/holochain-0.3.0-beta-dev.45";
-
     holochain-flake.url = "github:holochain/holochain";
-    holochain-flake.inputs.versions.follows = "versions";
 
     nixpkgs.follows = "holochain-flake/nixpkgs";
     flake-parts.follows = "holochain-flake/flake-parts";
@@ -22,10 +16,11 @@
         formatter = pkgs.nixfmt-rfc-style;
 
         devShells.default = pkgs.mkShell {
-          inputsFrom = [ inputs'.holochain-flake.devShells.holonix ];
+          inputsFrom = [ inputs'.holochain-flake.devShells.rustDev ];
           packages = [
             pkgs.nodejs-18_x
             pkgs.binaryen
+            pkgs.cargo-machete
             # more packages go here
           ];
         };

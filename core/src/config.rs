@@ -1,7 +1,8 @@
 use arrayref::array_ref;
 use ed25519_dalek::{Digest, Sha512, SigningKey, VerifyingKey};
-use failure::Error;
+use failure::{bail, Error};
 use serde::*;
+use strum::{EnumDiscriminants, EnumString, VariantNames};
 
 use crate::public_key;
 pub const SEED_SIZE: usize = 32;
@@ -43,6 +44,7 @@ const ARGON2_ADDITIONAL_DATA: &[u8] = b"hpos-config admin ed25519 key v1";
 
 pub type Seed = [u8; SEED_SIZE];
 
+#[cfg_attr(test, derive(Clone, PartialEq))]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Admin {
     pub email: String,
@@ -53,12 +55,29 @@ pub struct Admin {
     pub public_key: VerifyingKey,
 }
 
+#[cfg_attr(test, derive(Clone, PartialEq))]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     pub admin: Admin,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+/// Returns the default derivation path per config version.
+pub const fn default_derivation_path(config: ConfigDiscriminants) -> u32 {
+    match config {
+        // TODO: what should these be?
+        ConfigDiscriminants::V1 => 2,
+        ConfigDiscriminants::V2 => 2,
+        ConfigDiscriminants::V3 => 2,
+    }
+}
+
+#[allow(clippy::large_enum_variant)]
+#[cfg_attr(test, derive(Clone, PartialEq))]
+#[derive(Debug, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(
+    derive(VariantNames, EnumString, strum::Display, Default),
+    strum(ascii_case_insensitive)
+)]
 pub enum Config {
     #[serde(rename = "v1")]
     V1 {
@@ -78,6 +97,7 @@ pub enum Config {
         settings: Settings,
     },
     #[serde(rename = "v3")]
+    #[strum_discriminants(default)]
     V3 {
         /// This is the Device Seed Bundle as a base64 string which is compatible with lair-keystore >=v0.0.8
         /// And is encoded with a password that will be needed to be used to decrypt it
@@ -146,6 +166,58 @@ impl Config {
             | Config::V3 { settings, .. } => settings.admin.public_key,
         }
     }
+
+    /// Try to convert Config instance to the desired ConfigDiscriminants.
+    /// As some conversions are impossible they will return an error accordingly.
+    pub fn try_convert(self, desired: ConfigDiscriminants) -> Result<Self, Error> {
+        match (self, desired) {
+            (cfg @ Config::V1 { .. }, ConfigDiscriminants::V1) => Ok(cfg),
+            (Config::V1 { .. }, ConfigDiscriminants::V2) => bail!("cannot convert V1 to V2"),
+            (Config::V1 { .. }, ConfigDiscriminants::V3) => bail!("cannot convert V1 to V3"),
+            (
+                Config::V2 {
+                    device_bundle,
+                    derivation_path,
+                    registration_code,
+                    settings,
+                },
+                ConfigDiscriminants::V1,
+            ) => Ok(Config::V2 {
+                device_bundle,
+                derivation_path,
+                registration_code,
+                settings,
+            }),
+            (cfg @ Config::V2 { .. }, ConfigDiscriminants::V2) => Ok(cfg),
+            (Config::V2 { .. }, ConfigDiscriminants::V3) => bail!("cannot convert V2 to V3"),
+            (
+                Config::V3 {
+                    // device_bundle,
+                    // settings,
+                    ..
+                },
+                ConfigDiscriminants::V1,
+            ) => {
+                unimplemented!("convert V3 to V1 (lossy)");
+            }
+            (
+                Config::V3 {
+                    device_bundle,
+                    device_derivation_path,
+                    registration_code,
+                    settings,
+                    ..
+                },
+                ConfigDiscriminants::V2,
+            ) => Ok(Config::V2 {
+                device_bundle,
+                derivation_path: device_derivation_path,
+                registration_code,
+                settings,
+            }),
+            (cfg @ Config::V3 { .. }, ConfigDiscriminants::V3) => Ok(cfg),
+        }
+    }
 }
 
 // fn generate_keypair(
@@ -181,4 +253,57 @@ pub fn admin_keypair_from(
     );
 
     Ok(SigningKey::from_bytes(&hash))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{test_utils::generate_test_hpos_config, Config};
+
+    #[tokio::test]
+    async fn convert_v3_to_v2() {
+        let (config, _) = generate_test_hpos_config().await.unwrap();
+
+        // ensure we start with a v3 config
+        let v3 = config
+            .clone()
+            .try_convert(crate::config::ConfigDiscriminants::V3)
+            .unwrap();
+        assert_eq!(config, v3);
+
+        let v2 = config
+            .clone()
+            .try_convert(crate::config::ConfigDiscriminants::V2)
+            .unwrap();
+
+        if let Config::V2 {
+            device_bundle,
+            derivation_path,
+            registration_code,
+            settings,
+        } = v2
+        {
+            let v2_device_bundle = device_bundle;
+            let v2_derivation_path = derivation_path;
+            let v2_registration_code = registration_code;
+            let v2_settings = settings;
+
+            if let Config::V3 {
+                device_bundle,
+                device_derivation_path,
+                registration_code,
+                settings,
+                ..
+            } = config
+            {
+                assert_eq!(v2_device_bundle, device_bundle);
+                assert_eq!(v2_derivation_path, device_derivation_path);
+                assert_eq!(v2_registration_code, registration_code);
+                assert_eq!(v2_settings, settings);
+            } else {
+                panic!("config isn't v3");
+            };
+        } else {
+            panic!("must match v2");
+        }
+    }
 }

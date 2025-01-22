@@ -5,9 +5,10 @@
 use anyhow::{Context, Result};
 use ed25519_dalek::*;
 use hpos_config_core::*;
-use hpos_config_seed_bundle_explorer::{encrypt_key, unlock};
+use hpos_config_seed_bundle_explorer::encrypt_key;
 use std::path::PathBuf;
 use structopt::StructOpt;
+use utils::unlock;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,22 +39,18 @@ async fn main() -> Result<()> {
         }
         Config::V2 { device_bundle, .. } => {
             // take in password
-            let secret = unlock(&device_bundle, Some(password))
-                .await
-                .context(format!(
-                    "unable to unlock the device bundle from {}",
-                    &config_path.to_string_lossy()
-                ))?;
+            let secret = unlock(&device_bundle, &password).await.context(format!(
+                "unable to unlock the device bundle from {}",
+                &config_path.to_string_lossy()
+            ))?;
             println!("{}", encrypt_key(&secret, &secret.verifying_key()));
         }
         Config::V3 { device_bundle, .. } => {
             // take in password
-            let secret = unlock(&device_bundle, Some(password))
-                .await
-                .context(format!(
-                    "unable to unlock the device bundle from {}",
-                    &config_path.to_string_lossy()
-                ))?;
+            let secret = unlock(&device_bundle, &password).await.context(format!(
+                "unable to unlock the device bundle from {}",
+                &config_path.to_string_lossy()
+            ))?;
             println!("{}", encrypt_key(&secret, &secret.verifying_key()));
         }
     }

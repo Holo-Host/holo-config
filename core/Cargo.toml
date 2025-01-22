@@ -20,6 +20,13 @@ rand = "0.6.5"
 serde = { workspace = true }
 url = "2.1.0"
 base36 = "=0.0.1"
+thiserror = { workspace = true }
+log = { workspace = true }
+
+tokio = { version = "1.12.0", features = [ "full" ] }
+hc_seed_bundle = "0.2.3"
+sodoken = "=0.0.11"
+strum = { version = "0.26.3", features = ["derive", "strum_macros"] }
 
 [dependencies.argon2min]
 git = "https://github.com/Holo-Host/argon2min"

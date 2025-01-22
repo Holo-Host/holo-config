@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use ed25519_dalek::*;
 use hpos_config_core::*;
-use hpos_config_seed_bundle_explorer::unlock;
 use std::fs::File;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -35,7 +34,7 @@ async fn main() -> Result<()> {
         }
         Config::V2 { device_bundle, .. } => {
             // take in password
-            let secret = unlock(&device_bundle, Some(password))
+            let secret = utils::unlock(&device_bundle, &password)
                 .await
                 .context(format!(
                     "unable to unlock the device bundle from {}",
